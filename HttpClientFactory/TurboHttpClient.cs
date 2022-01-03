@@ -12,7 +12,7 @@ public class TurboHttpClient
         _httpClient = new HttpClient(httpSocketsHandler, false);
     }
     
-    public (T? result, bool IsSuccessStatusCode, HttpStatusCode StatusCode, string? ReasonPhrase) Send<T>(HttpMethod method,
+    public TurboResult<T?> Send<T>(HttpMethod method,
         Uri requestUri,
         HttpContent? content = null,
         HttpRequestHeaders? headers = null,
@@ -20,16 +20,32 @@ public class TurboHttpClient
         int retryDelay = 100,
         CancellationToken cancellationToken = default)
     {
-        using var request = new HttpRequestMessage(method, requestUri);
-        SetRequestHeaders(request, headers);
-        SetRequestContent(request, content);
-        
-        using var responseMessage = _httpClient.SendWithRetry(request, retryCount, retryDelay, cancellationToken);
+        TurboResult<T?> result;
+        try
+        {
+            using var request = new HttpRequestMessage(method, requestUri);
+            SetRequestHeaders(request, headers);
+            SetRequestContent(request, content);
 
-        JsonSerializerOptions? options = null;
-        var result = responseMessage.DeserializeContent<T>(options, cancellationToken);
-        
-        return (result, responseMessage.IsSuccessStatusCode, responseMessage.StatusCode, responseMessage.ReasonPhrase);
+            using var responseMessage = _httpClient.SendWithRetry(request, retryCount, retryDelay, cancellationToken);
+
+            JsonSerializerOptions? options = null;
+            var deserializeContent = responseMessage.DeserializeContent<T>(options, cancellationToken);
+            result = new TurboResult<T?>(deserializeContent,
+                responseMessage.IsSuccessStatusCode,
+                responseMessage.StatusCode,
+                responseMessage.ReasonPhrase);
+        }
+        catch
+        {
+            throw;
+        }
+        finally
+        {
+            _httpClient.Dispose();
+        }
+
+        return result;
     }
     
     private void SetRequestHeaders(HttpRequestMessage request, HttpRequestHeaders? headers)
